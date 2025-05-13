@@ -61,7 +61,7 @@ int parametersTimerMaxValue[NUM_SETTING_ITEMS] = {60000};
 
 static const int buttonPin = 32;
 static const int buttonPin2 = 25;
-static const int buttonPin3 = 26;
+static const int buttonPin3 = 13;
 
 ezButton button1(buttonPin, EXTERNAL_PULLUP);
 ezButton button2(buttonPin2, EXTERNAL_PULLUP);
@@ -82,7 +82,7 @@ void initButtons()
 {
   button1.setDebounceTime(100);
   button2.setDebounceTime(100);
-  button2.setDebounceTime(100);
+  button3.setDebounceTime(100);
 }
 
 void stopAll()
@@ -99,6 +99,9 @@ bool menuFlag = false;
 
 void readButton()
 {
+  button1.loop();
+  button2.loop();
+  button3.loop();
   if (button1.isReleased() && button2.isReleased() && button3.isReleased())
   {
     menuFlag = true;
@@ -107,12 +110,12 @@ void readButton()
 
   if (menuFlag == true)
   {
-    // Menu Todo
   }
   else
   {
     if (button1.isPressed())
     {
+      Serial.println("Button 1 is Released");
       if (CrustExtruder.getMotorState() == true)
       {
         CrustExtruder.relayOff();
@@ -125,6 +128,7 @@ void readButton()
 
     if (button2.isPressed())
     {
+      Serial.println("Button 2 is Released");
       if (FillingExtruder.getMotorState() == true)
       {
         FillingExtruder.relayOff();
@@ -137,6 +141,7 @@ void readButton()
 
     if (button3.isPressed())
     {
+      Serial.println("Button 3 is Released");
       if (Cutter.getMotorState() == true)
       {
         Cutter.relayOff();
@@ -232,7 +237,20 @@ void setup()
 {
   initRelays();
   initButtons();
-  Serial.begin(9600);
+  Serial.begin(115200);
+
+  lcd.init(); // initialize the lcd
+  lcd.init();
+  // Print a message to the LCD.
+  lcd.backlight();
+  lcd.setCursor(3, 0);
+  lcd.print("Hello, world!");
+  lcd.setCursor(2, 1);
+  lcd.print("Ywrobot Arduino!");
+  lcd.setCursor(0, 2);
+  lcd.print("Arduino LCM IIC 2004");
+  lcd.setCursor(2, 3);
+  lcd.print("Power By Ec-yuan!");
   // put your setup code here, to run once:
 }
 
