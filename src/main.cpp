@@ -41,7 +41,7 @@ byte slowChar[] = {
     B00100,
     B01110};
 // Declaration of LCD Variables
-const int NUM_MAIN_ITEMS = 1;
+const int NUM_MAIN_ITEMS = 2;
 const int NUM_SETTING_ITEMS = 2;
 
 int currentMainScreen;
@@ -50,7 +50,8 @@ int currentTestMenuScreen;
 bool settingFlag, settingEditFlag, testMenuFlag, runAutoFlag, refreshScreen = false;
 
 String menu_items[NUM_MAIN_ITEMS][2] = { // array with item names
-    {"SETTING", "ENTER TO EDIT"}};
+    {"SETTING", "ENTER TO EDIT"},
+    {"RUN AUTO", "CLICK TO EXIT"}};
 
 String setting_items[NUM_SETTING_ITEMS][2] = { // array with item names
     {"LENGTH", "MILLIS"},
@@ -58,6 +59,10 @@ String setting_items[NUM_SETTING_ITEMS][2] = { // array with item names
 
 int parametersTimer[NUM_SETTING_ITEMS] = {1};
 int parametersTimerMaxValue[NUM_SETTING_ITEMS] = {60000};
+
+unsigned long currentMillisRunAuto;
+unsigned long previousMillisRunAuto;
+unsigned long intervalRunAuto = 1000;
 
 static const int buttonPin = 32;
 static const int buttonPin2 = 25;
@@ -106,16 +111,135 @@ void readButton()
   {
     menuFlag = true;
     stopAll();
+    refreshScreen = true;
   }
 
   if (menuFlag == true)
   {
+    if (button1.isReleased())
+    {
+      refreshScreen = true;
+      if (settingFlag == true)
+      {
+        if (settingEditFlag == true)
+        {
+          if (parametersTimer[currentSettingScreen] >= parametersTimerMaxValue[currentSettingScreen] - 1)
+          {
+            parametersTimer[currentSettingScreen] = parametersTimerMaxValue[currentSettingScreen];
+          }
+          else
+          {
+            parametersTimer[currentSettingScreen] += 1;
+          }
+        }
+        else
+        {
+          if (currentSettingScreen == NUM_SETTING_ITEMS - 1)
+          {
+            currentSettingScreen = 0;
+          }
+          else
+          {
+            currentSettingScreen++;
+          }
+        }
+      }
+      else
+      {
+        if (currentSettingScreen == NUM_SETTING_ITEMS - 1)
+        {
+          currentSettingScreen = 0;
+        }
+        else
+        {
+          currentSettingScreen++;
+        }
+      }
+    }
+
+    if (button2.isReleased())
+    {
+      refreshScreen = true;
+      if (settingFlag == true)
+      {
+        if (settingEditFlag == true)
+        {
+          if (parametersTimer[currentSettingScreen] <= 0)
+          {
+            parametersTimer[currentSettingScreen] = 0;
+          }
+          else
+          {
+            parametersTimer[currentSettingScreen] -= 1;
+          }
+        }
+        else
+        {
+          if (currentSettingScreen == 0)
+          {
+            currentSettingScreen = NUM_SETTING_ITEMS - 1;
+          }
+          else
+          {
+            currentSettingScreen--;
+          }
+        }
+      }
+      else
+      {
+        if (currentMainScreen == 0)
+        {
+          currentMainScreen = NUM_MAIN_ITEMS - 1;
+        }
+        else
+        {
+          currentMainScreen--;
+        }
+      }
+    }
+
+    if (button3.isReleased())
+    {
+      refreshScreen = true;
+      if (currentMainScreen == 0 && settingFlag == true)
+      {
+        if (currentSettingScreen == NUM_SETTING_ITEMS - 1)
+        {
+          settingFlag = false;
+          saveSettings();
+          loadSettings();
+          currentSettingScreen = 0;
+        }
+        else
+        {
+          if (settingEditFlag == true)
+          {
+            settingEditFlag = false;
+          }
+          else
+          {
+            settingEditFlag = true;
+          }
+        }
+      }
+      else
+      {
+        if (currentMainScreen == 0)
+        {
+          settingFlag = true;
+        }
+        else if (currentMainScreen == 1)
+        {
+          menuFlag = false;
+        }
+      }
+    }
   }
   else
   {
     if (button1.isPressed())
     {
-      Serial.println("Button 1 is Released");
+      // Serial.println("Button 1 is Released");
       if (CrustExtruder.getMotorState() == true)
       {
         CrustExtruder.relayOff();
@@ -128,7 +252,7 @@ void readButton()
 
     if (button2.isPressed())
     {
-      Serial.println("Button 2 is Released");
+      // Serial.println("Button 2 is Released");
       if (FillingExtruder.getMotorState() == true)
       {
         FillingExtruder.relayOff();
@@ -141,7 +265,7 @@ void readButton()
 
     if (button3.isPressed())
     {
-      Serial.println("Button 3 is Released");
+      // Serial.println("Button 3 is Released");
       if (Cutter.getMotorState() == true)
       {
         Cutter.relayOff();
@@ -232,31 +356,159 @@ char *secondsToHHMMSS(int total_seconds)
   sprintf(hhmmss_str, "%02d%02d%02d", hours, minutes, seconds);
   return hhmmss_str;
 }
+void initializeLCD()
+{
+  lcd.init();
+  lcd.clear();
+  lcd.createChar(0, enterChar);
+  lcd.createChar(1, fastChar);
+  lcd.createChar(2, slowChar);
+  lcd.backlight();
+  refreshScreen = true;
+}
+void printSettingScreen(String SettingTitle, String Unit, int Value, bool EditFlag, bool SaveFlag)
+{
+  lcd.clear();
+  lcd.print(SettingTitle);
+  lcd.setCursor(0, 1);
+
+  if (SaveFlag == true)
+  {
+    lcd.setCursor(0, 3);
+    lcd.write(0);
+    lcd.setCursor(2, 3);
+    lcd.print("ENTER TO SAVE ALL");
+  }
+  else
+  {
+    lcd.print(Value);
+    lcd.print(" ");
+    lcd.print(Unit);
+    lcd.setCursor(0, 3);
+    lcd.write(0);
+    lcd.setCursor(2, 3);
+    if (EditFlag == false)
+    {
+      lcd.print("ENTER TO EDIT");
+    }
+    else
+    {
+      lcd.print("ENTER TO SAVE");
+    }
+  }
+  refreshScreen = false;
+}
+void printMainMenu(String MenuItem, String Action)
+{
+  lcd.clear();
+  lcd.print(MenuItem);
+  lcd.setCursor(0, 3);
+  lcd.write(0);
+  lcd.setCursor(2, 3);
+  lcd.print(Action);
+  refreshScreen = false;
+}
+
+void printRunAuto(bool Motor1, bool Motor2, bool Motor3, bool Sensor, String TimeRemaining)
+{
+  lcd.clear();
+  if (Motor1 == true)
+  {
+    lcd.print("Extruder : ON");
+  }
+  else
+  {
+    lcd.print("Extruder : OFF");
+  }
+
+  lcd.setCursor(0, 1);
+  if (Motor2 == true)
+  {
+    lcd.print("Filler : ON");
+  }
+  else
+  {
+    lcd.print("Filler : OFF");
+  }
+
+  lcd.setCursor(0, 2);
+  if (Motor2 == true)
+  {
+    lcd.print("Cutter : ON");
+  }
+  else
+  {
+    lcd.print("Cutter : OFF");
+  }
+
+  lcd.setCursor(0, 2);
+  lcd.print(TimeRemaining);
+  refreshScreen = false;
+}
+
+void printScreen()
+{
+  if (menuFlag == true)
+  {
+    printRunAuto(CrustExtruder.getMotorState(), FillingExtruder.getMotorState(), Cutter.getMotorState(), false, CuttingLengthTimer.getTimeRemaining());
+  }
+  else
+  {
+    if (settingFlag == true)
+    {
+      if (currentSettingScreen == NUM_SETTING_ITEMS - 1)
+      {
+        printSettingScreen(setting_items[currentSettingScreen][0], setting_items[currentSettingScreen][1], parametersTimer[currentSettingScreen], settingEditFlag, true);
+      }
+      else
+      {
+        printSettingScreen(setting_items[currentSettingScreen][0], setting_items[currentSettingScreen][1], parametersTimer[currentSettingScreen], settingEditFlag, false);
+      }
+    }
+    else
+    {
+      printMainMenu(menu_items[currentMainScreen][0], menu_items[currentMainScreen][1]);
+    }
+  }
+}
+void saveSettings()
+{
+  Settings.putInt("length", parametersTimer[0]);
+  Serial.println("---- Saving Timer  Settings ----");
+  Serial.println("Length Time : " + String(parametersTimer[0]));
+  Serial.println("---- Saving Timer  Settings ----");
+}
+void loadSettings()
+{
+  Serial.println("---- Start Reading Settings ----");
+  parametersTimer[0] = Settings.getInt("length");
+  Serial.println("Length Timer : " + String(parametersTimer[0]));
+  CuttingLengthTimer.setTimer(secondsToHHMMSS(parametersTimer[0]));
+  Serial.println("---- End Reading Settings ----");
+}
 
 void setup()
 {
   initRelays();
   initButtons();
   Serial.begin(115200);
-
-  lcd.init(); // initialize the lcd
-  lcd.init();
-  // Print a message to the LCD.
-  lcd.backlight();
-  lcd.setCursor(3, 0);
-  lcd.print("Hello, world!");
-  lcd.setCursor(2, 1);
-  lcd.print("Ywrobot Arduino!");
-  lcd.setCursor(0, 2);
-  lcd.print("Arduino LCM IIC 2004");
-  lcd.setCursor(2, 3);
-  lcd.print("Power By Ec-yuan!");
-  // put your setup code here, to run once:
+  Settings.begin("timerSetting", false);
+  saveSettings();
+  loadSettings();
+  initializeLCD();
 }
 
 void loop()
 {
-  // put your main code here, to run repeatedly:
   readButton();
   runAuto();
+  if (menuFlag == false)
+  {
+    unsigned long currentMillisRunAuto = millis();
+    if (currentMillisRunAuto - previousMillisRunAuto >= intervalRunAuto)
+    {
+      previousMillisRunAuto = currentMillisRunAuto;
+      refreshScreen = true;
+    }
+  }
 }
