@@ -62,15 +62,37 @@ int parametersTimerMaxValue[NUM_SETTING_ITEMS] = {60000};
 
 unsigned long currentMillisRunAuto;
 unsigned long previousMillisRunAuto;
-unsigned long intervalRunAuto = 1000;
+unsigned long intervalRunAuto = 250;
 
 static const int buttonPin = 32;
 static const int buttonPin2 = 25;
 static const int buttonPin3 = 13;
+int buttonStatePrevious = HIGH;
+int buttonStatePrevious2 = HIGH;
+int buttonStatePrevious3 = HIGH;
 
-ezButton button1(buttonPin, EXTERNAL_PULLUP);
-ezButton button2(buttonPin2, EXTERNAL_PULLUP);
-ezButton button3(buttonPin3, EXTERNAL_PULLUP);
+unsigned long minButtonLongPressDuration = 2000;
+unsigned long buttonLongPressUpMillis;
+unsigned long buttonLongPressDownMillis;
+unsigned long buttonLongPressEnterMillis;
+bool buttonStateLongPressUp = false;
+bool buttonStateLongPressDown = false;
+bool buttonStateLongPressEnter = false;
+
+const int intervalButton = 50;
+unsigned long previousButtonMillis;
+unsigned long buttonPressDuration;
+unsigned long currentMillis;
+
+const int intervalButton2 = 50;
+unsigned long previousButtonMillis2;
+unsigned long buttonPressDuration2;
+unsigned long currentMillis2;
+
+const int intervalButton3 = 50;
+unsigned long previousButtonMillis3;
+unsigned long buttonPressDuration3;
+unsigned long currentMillis3;
 
 const int rCrustExtruder = P1;
 const int rFillingExtruder = P2;
@@ -83,11 +105,47 @@ Control Cutter(0);
 Control FillingStopTimer(0);
 Control CuttingLengthTimer(0);
 
+ezButton Sensor(27);
+
+bool cutterRunAutoFlag = false;
+
+char *secondsToHHMMSS(int total_seconds)
+{
+  int hours, minutes, seconds;
+
+  hours = total_seconds / 3600;         // Divide by number of seconds in an hour
+  total_seconds = total_seconds % 3600; // Get the remaining seconds
+  minutes = total_seconds / 60;         // Divide by number of seconds in a minute
+  seconds = total_seconds % 60;         // Get the remaining seconds
+
+  // Format the output string
+  static char hhmmss_str[7]; // 6 characters for HHMMSS + 1 for null terminator
+  sprintf(hhmmss_str, "%02d%02d%02d", hours, minutes, seconds);
+  return hhmmss_str;
+}
+
+void saveSettings()
+{
+  Settings.putInt("length", parametersTimer[0]);
+  Serial.println("---- Saving Timer  Settings ----");
+  Serial.println("Length Time : " + String(parametersTimer[0]));
+  Serial.println("---- Saving Timer  Settings ----");
+}
+void loadSettings()
+{
+  Serial.println("---- Start Reading Settings ----");
+  parametersTimer[0] = Settings.getInt("length");
+  Serial.println("Length Timer : " + String(parametersTimer[0]));
+  CuttingLengthTimer.setTimer(secondsToHHMMSS(parametersTimer[0]));
+  Serial.println("---- End Reading Settings ----");
+}
+
 void initButtons()
 {
-  button1.setDebounceTime(100);
-  button2.setDebounceTime(100);
-  button3.setDebounceTime(100);
+  pinMode(buttonPin, INPUT);
+  pinMode(buttonPin2, INPUT);
+  pinMode(buttonPin3, INPUT);
+  Sensor.setDebounceTime(30);
 }
 
 void stopAll()
@@ -102,187 +160,403 @@ void stopAll()
 
 bool menuFlag = false;
 
-void readButton()
+void readButtonUpState()
 {
-  button1.loop();
-  button2.loop();
-  button3.loop();
-  if (button1.isReleased() && button2.isReleased() && button3.isReleased())
+  if (currentMillis - previousButtonMillis > intervalButton)
   {
-    menuFlag = true;
-    stopAll();
-    refreshScreen = true;
-  }
-
-  if (menuFlag == true)
-  {
-    if (button1.isReleased())
+    int buttonState = digitalRead(buttonPin);
+    if (buttonState == LOW && buttonStatePrevious == HIGH && !buttonStateLongPressUp)
     {
+      buttonLongPressUpMillis = currentMillis;
+      buttonStatePrevious = LOW;
+    }
+    buttonPressDuration = currentMillis - buttonLongPressUpMillis;
+    if (buttonState == LOW && !buttonStateLongPressUp && buttonPressDuration >= minButtonLongPressDuration)
+    {
+      buttonStateLongPressUp = true;
+    }
+    if (buttonStateLongPressUp == true)
+    {
+      // Insert Fast Scroll Up
+      // Short Scroll Up
       refreshScreen = true;
-      if (settingFlag == true)
+      if (menuFlag == false)
       {
-        if (settingEditFlag == true)
+        if (CrustExtruder.getMotorState() == true)
         {
-          if (parametersTimer[currentSettingScreen] >= parametersTimerMaxValue[currentSettingScreen] - 1)
-          {
-            parametersTimer[currentSettingScreen] = parametersTimerMaxValue[currentSettingScreen];
-          }
-          else
-          {
-            parametersTimer[currentSettingScreen] += 1;
-          }
+          CrustExtruder.relayOff();
         }
         else
         {
-          if (currentSettingScreen == NUM_SETTING_ITEMS - 1)
-          {
-            currentSettingScreen = 0;
-          }
-          else
-          {
-            currentSettingScreen++;
-          }
+          CrustExtruder.relayOn();
         }
       }
       else
       {
-        if (currentSettingScreen == NUM_SETTING_ITEMS - 1)
-        {
-          currentSettingScreen = 0;
-        }
-        else
-        {
-          currentSettingScreen++;
-        }
-      }
-    }
-
-    if (button2.isReleased())
-    {
-      refreshScreen = true;
-      if (settingFlag == true)
-      {
-        if (settingEditFlag == true)
-        {
-          if (parametersTimer[currentSettingScreen] <= 0)
-          {
-            parametersTimer[currentSettingScreen] = 0;
-          }
-          else
-          {
-            parametersTimer[currentSettingScreen] -= 1;
-          }
-        }
-        else
-        {
-          if (currentSettingScreen == 0)
-          {
-            currentSettingScreen = NUM_SETTING_ITEMS - 1;
-          }
-          else
-          {
-            currentSettingScreen--;
-          }
-        }
-      }
-      else
-      {
-        if (currentMainScreen == 0)
-        {
-          currentMainScreen = NUM_MAIN_ITEMS - 1;
-        }
-        else
-        {
-          currentMainScreen--;
-        }
-      }
-    }
-
-    if (button3.isReleased())
-    {
-      refreshScreen = true;
-      if (currentMainScreen == 0 && settingFlag == true)
-      {
-        if (currentSettingScreen == NUM_SETTING_ITEMS - 1)
-        {
-          settingFlag = false;
-          saveSettings();
-          loadSettings();
-          currentSettingScreen = 0;
-        }
-        else
+        if (settingFlag == true)
         {
           if (settingEditFlag == true)
           {
-            settingEditFlag = false;
+            if (parametersTimer[currentSettingScreen] >= parametersTimerMaxValue[currentSettingScreen] - 1)
+            {
+              parametersTimer[currentSettingScreen] = parametersTimerMaxValue[currentSettingScreen];
+            }
+            else
+            {
+              parametersTimer[currentSettingScreen] += 1;
+            }
           }
           else
           {
-            settingEditFlag = true;
+            if (currentSettingScreen == NUM_SETTING_ITEMS - 1)
+            {
+              currentSettingScreen = 0;
+            }
+            else
+            {
+              currentSettingScreen++;
+            }
+          }
+        }
+        else
+        {
+          if (currentMainScreen == NUM_MAIN_ITEMS - 1)
+          {
+            currentMainScreen = 0;
+          }
+          else
+          {
+            currentMainScreen++;
           }
         }
       }
-      else
-      {
-        if (currentMainScreen == 0)
-        {
-          settingFlag = true;
-        }
-        else if (currentMainScreen == 1)
-        {
-          menuFlag = false;
-        }
-      }
-    }
-  }
-  else
-  {
-    if (button1.isPressed())
-    {
-      // Serial.println("Button 1 is Released");
-      if (CrustExtruder.getMotorState() == true)
-      {
-        CrustExtruder.relayOff();
-      }
-      else
-      {
-        CrustExtruder.relayOn();
-      }
     }
 
-    if (button2.isPressed())
+    if (buttonState == HIGH && buttonStatePrevious == LOW)
     {
-      // Serial.println("Button 2 is Released");
-      if (FillingExtruder.getMotorState() == true)
+      buttonStatePrevious = HIGH;
+      buttonStateLongPressUp = false;
+      if (buttonPressDuration < minButtonLongPressDuration)
       {
-        FillingExtruder.relayOff();
-      }
-      else
-      {
-        FillingExtruder.relayOn();
+        // Short Scroll Up
+        refreshScreen = true;
+        if (menuFlag == false)
+        {
+          if (CrustExtruder.getMotorState() == true)
+          {
+            CrustExtruder.relayOff();
+          }
+          else
+          {
+            CrustExtruder.relayOn();
+          }
+        }
+        else
+        {
+          if (settingFlag == true)
+          {
+            if (settingEditFlag == true)
+            {
+              if (parametersTimer[currentSettingScreen] >= parametersTimerMaxValue[currentSettingScreen] - 1)
+              {
+                parametersTimer[currentSettingScreen] = parametersTimerMaxValue[currentSettingScreen];
+              }
+              else
+              {
+                parametersTimer[currentSettingScreen] += 1;
+              }
+            }
+            else
+            {
+              if (currentSettingScreen == NUM_SETTING_ITEMS - 1)
+              {
+                currentSettingScreen = 0;
+              }
+              else
+              {
+                currentSettingScreen++;
+              }
+            }
+          }
+          else
+          {
+            if (currentMainScreen == NUM_MAIN_ITEMS - 1)
+            {
+              currentMainScreen = 0;
+            }
+            else
+            {
+              currentMainScreen++;
+            }
+          }
+        }
       }
     }
-
-    if (button3.isPressed())
-    {
-      // Serial.println("Button 3 is Released");
-      if (Cutter.getMotorState() == true)
-      {
-        Cutter.relayOff();
-      }
-      else
-      {
-        Cutter.relayOn();
-      }
-    }
+    previousButtonMillis = currentMillis;
   }
 }
 
+void readButtonDownState()
+{
+  if (currentMillis2 - previousButtonMillis2 > intervalButton2)
+  {
+    int buttonState2 = digitalRead(buttonPin2);
+    if (buttonState2 == LOW && buttonStatePrevious2 == HIGH && !buttonStateLongPressDown)
+    {
+      buttonLongPressDownMillis = currentMillis2;
+      buttonStatePrevious2 = LOW;
+    }
+    buttonPressDuration2 = currentMillis2 - buttonLongPressDownMillis;
+    if (buttonState2 == LOW && !buttonStateLongPressDown && buttonPressDuration2 >= minButtonLongPressDuration)
+    {
+      buttonStateLongPressDown = true;
+    }
+    if (buttonStateLongPressDown == true)
+    {
+      refreshScreen = true;
+      if (menuFlag == false)
+      {
+        if (FillingExtruder.getMotorState() == true)
+        {
+          FillingExtruder.relayOff();
+        }
+        else
+        {
+          FillingExtruder.relayOn();
+        }
+      }
+      else
+      {
+        if (settingFlag == true)
+        {
+          if (settingEditFlag == true)
+          {
+            if (currentSettingScreen == 2)
+            {
+              if (parametersTimer[currentSettingScreen] <= 2)
+              {
+                parametersTimer[currentSettingScreen] = 2;
+              }
+              else
+              {
+                parametersTimer[currentSettingScreen] -= 1;
+              }
+            }
+            else
+            {
+              if (parametersTimer[currentSettingScreen] <= 0)
+              {
+                parametersTimer[currentSettingScreen] = 0;
+              }
+              else
+              {
+                parametersTimer[currentSettingScreen] -= 1;
+              }
+            }
+          }
+          else
+          {
+            if (currentSettingScreen == 0)
+            {
+              currentSettingScreen = NUM_SETTING_ITEMS - 1;
+            }
+            else
+            {
+              currentSettingScreen--;
+            }
+          }
+        }
+        else
+        {
+          if (currentMainScreen == 0)
+          {
+            currentMainScreen = NUM_MAIN_ITEMS - 1;
+          }
+          else
+          {
+            currentMainScreen--;
+          }
+        }
+      }
+    }
+
+    if (buttonState2 == HIGH && buttonStatePrevious2 == LOW)
+    {
+      buttonStatePrevious2 = HIGH;
+      buttonStateLongPressDown = false;
+      if (buttonPressDuration2 < minButtonLongPressDuration)
+      {
+        refreshScreen = true;
+        if (menuFlag == false)
+        {
+          if (FillingExtruder.getMotorState() == true)
+          {
+            FillingExtruder.relayOff();
+          }
+          else
+          {
+            FillingExtruder.relayOn();
+          }
+        }
+        else
+        {
+          if (settingFlag == true)
+          {
+            if (settingEditFlag == true)
+            {
+              if (currentSettingScreen == 2)
+              {
+                if (parametersTimer[currentSettingScreen] <= 2)
+                {
+                  parametersTimer[currentSettingScreen] = 2;
+                }
+                else
+                {
+                  parametersTimer[currentSettingScreen] -= 1;
+                }
+              }
+              else
+              {
+                if (parametersTimer[currentSettingScreen] <= 0)
+                {
+                  parametersTimer[currentSettingScreen] = 0;
+                }
+                else
+                {
+                  parametersTimer[currentSettingScreen] -= 1;
+                }
+              }
+            }
+            else
+            {
+              if (currentSettingScreen == 0)
+              {
+                currentSettingScreen = NUM_SETTING_ITEMS - 1;
+              }
+              else
+              {
+                currentSettingScreen--;
+              }
+            }
+          }
+          else
+          {
+            if (currentMainScreen == 0)
+            {
+              currentMainScreen = NUM_MAIN_ITEMS - 1;
+            }
+            else
+            {
+              currentMainScreen--;
+            }
+          }
+        }
+      }
+    }
+    previousButtonMillis2 = currentMillis2;
+  }
+}
+
+void readButtonEnterState()
+{
+  if (currentMillis3 - previousButtonMillis3 > intervalButton3)
+  {
+    int buttonState3 = digitalRead(buttonPin3);
+    if (buttonState3 == LOW && buttonStatePrevious3 == HIGH && !buttonStateLongPressEnter)
+    {
+      buttonLongPressEnterMillis = currentMillis3;
+      buttonStatePrevious3 = LOW;
+    }
+    buttonPressDuration3 = currentMillis3 - buttonLongPressEnterMillis;
+    if (buttonState3 == LOW && !buttonStateLongPressEnter && buttonPressDuration3 >= minButtonLongPressDuration)
+    {
+      buttonStateLongPressEnter = true;
+    }
+    if (buttonStateLongPressEnter == true)
+    {
+      // Insert Fast Scroll Enter
+      Serial.println("Long Press Enter");
+      menuFlag = true;
+    }
+
+    if (buttonState3 == HIGH && buttonStatePrevious3 == LOW)
+    {
+      buttonStatePrevious3 = HIGH;
+      buttonStateLongPressEnter = false;
+      if (buttonPressDuration3 < minButtonLongPressDuration)
+      {
+        refreshScreen = true;
+        if (menuFlag == false)
+        {
+
+          if (cutterRunAutoFlag == false)
+          {
+            cutterRunAutoFlag = true;
+          }
+          else
+          {
+            cutterRunAutoFlag = false;
+            Cutter.relayOff();
+          }
+        }
+        else
+        {
+          if (currentMainScreen == 0 && settingFlag == true)
+          {
+            if (currentSettingScreen == NUM_SETTING_ITEMS - 1)
+            {
+              settingFlag = false;
+              saveSettings();
+              loadSettings();
+              currentSettingScreen = 0;
+            }
+            else
+            {
+              if (settingEditFlag == true)
+              {
+                settingEditFlag = false;
+              }
+              else
+              {
+                settingEditFlag = true;
+              }
+            }
+          }
+          else
+          {
+            if (currentMainScreen == 0)
+            {
+              settingFlag = true;
+            }
+            else if (currentMainScreen == 1)
+            {
+              menuFlag = false;
+            }
+          }
+        }
+      }
+    }
+    previousButtonMillis3 = currentMillis3;
+  }
+}
+
+void ReadButtons()
+{
+  currentMillis = millis();
+  currentMillis2 = millis();
+  currentMillis3 = millis();
+  readButtonEnterState();
+  readButtonUpState();
+  readButtonDownState();
+  Sensor.loop();
+}
+
+bool initialMoveCutter = false;
 void runAuto()
 {
   if (menuFlag == false)
   {
-    if (CrustExtruder.getMotorState() == true)
+    if (CrustExtruder.getMotorState() == true && Cutter.getMotorState() == false)
     {
       pcf8575.digitalWrite(rCrustExtruder, LOW);
     }
@@ -291,13 +565,53 @@ void runAuto()
       pcf8575.digitalWrite(rCrustExtruder, HIGH);
     }
 
-    if (FillingExtruder.getMotorState() == true)
+    if (FillingExtruder.getMotorState() == true && Cutter.getMotorState() == false)
     {
       pcf8575.digitalWrite(rFillingExtruder, LOW);
     }
     else
     {
       pcf8575.digitalWrite(rFillingExtruder, HIGH);
+    }
+
+    if (cutterRunAutoFlag == true)
+    {
+
+      if (CuttingLengthTimer.isStopped() == false)
+      {
+        CuttingLengthTimer.run();
+        if (CuttingLengthTimer.isTimerCompleted() == true)
+        {
+          Cutter.relayOn();
+          initialMoveCutter = true;
+        }
+      }
+      else
+      {
+        if (initialMoveCutter == true)
+        {
+          if (Sensor.getState() == false)
+          {
+            Cutter.relayOn();
+          }
+          else
+          {
+            initialMoveCutter = false;
+          }
+        }
+        else
+        {
+          if (Sensor.getState() == true)
+          {
+            Cutter.relayOff();
+            CuttingLengthTimer.start();
+          }
+          else
+          {
+            Cutter.relayOn();
+          }
+        }
+      }
     }
 
     if (Cutter.getMotorState() == true)
@@ -342,20 +656,6 @@ void StopAll()
   pcf8575.digitalWrite(rCutter, HIGH);
 }
 
-char *secondsToHHMMSS(int total_seconds)
-{
-  int hours, minutes, seconds;
-
-  hours = total_seconds / 3600;         // Divide by number of seconds in an hour
-  total_seconds = total_seconds % 3600; // Get the remaining seconds
-  minutes = total_seconds / 60;         // Divide by number of seconds in a minute
-  seconds = total_seconds % 60;         // Get the remaining seconds
-
-  // Format the output string
-  static char hhmmss_str[7]; // 6 characters for HHMMSS + 1 for null terminator
-  sprintf(hhmmss_str, "%02d%02d%02d", hours, minutes, seconds);
-  return hhmmss_str;
-}
 void initializeLCD()
 {
   lcd.init();
@@ -409,7 +709,7 @@ void printMainMenu(String MenuItem, String Action)
   refreshScreen = false;
 }
 
-void printRunAuto(bool Motor1, bool Motor2, bool Motor3, bool Sensor, String TimeRemaining)
+void printRunAuto(bool Motor1, bool Motor2, bool Motor3, bool Sensor, String TimeRemaining, long count)
 {
   lcd.clear();
   if (Motor1 == true)
@@ -432,7 +732,7 @@ void printRunAuto(bool Motor1, bool Motor2, bool Motor3, bool Sensor, String Tim
   }
 
   lcd.setCursor(0, 2);
-  if (Motor2 == true)
+  if (Motor3 == true)
   {
     lcd.print("Cutter : ON");
   }
@@ -440,17 +740,21 @@ void printRunAuto(bool Motor1, bool Motor2, bool Motor3, bool Sensor, String Tim
   {
     lcd.print("Cutter : OFF");
   }
-
-  lcd.setCursor(0, 2);
+  lcd.setCursor(0, 3);
   lcd.print(TimeRemaining);
+
+  lcd.setCursor(15, 3);
+  lcd.print(count);
   refreshScreen = false;
 }
 
 void printScreen()
 {
-  if (menuFlag == true)
+  if (menuFlag == false)
   {
-    printRunAuto(CrustExtruder.getMotorState(), FillingExtruder.getMotorState(), Cutter.getMotorState(), false, CuttingLengthTimer.getTimeRemaining());
+
+    printRunAuto(CrustExtruder.getMotorState(), FillingExtruder.getMotorState(), Cutter.getMotorState(), false, CuttingLengthTimer.getTimeRemaining(), Sensor.getCount());
+    refreshScreen = false;
   }
   else
   {
@@ -471,21 +775,6 @@ void printScreen()
     }
   }
 }
-void saveSettings()
-{
-  Settings.putInt("length", parametersTimer[0]);
-  Serial.println("---- Saving Timer  Settings ----");
-  Serial.println("Length Time : " + String(parametersTimer[0]));
-  Serial.println("---- Saving Timer  Settings ----");
-}
-void loadSettings()
-{
-  Serial.println("---- Start Reading Settings ----");
-  parametersTimer[0] = Settings.getInt("length");
-  Serial.println("Length Timer : " + String(parametersTimer[0]));
-  CuttingLengthTimer.setTimer(secondsToHHMMSS(parametersTimer[0]));
-  Serial.println("---- End Reading Settings ----");
-}
 
 void setup()
 {
@@ -493,15 +782,20 @@ void setup()
   initButtons();
   Serial.begin(115200);
   Settings.begin("timerSetting", false);
-  saveSettings();
+  // saveSettings();
   loadSettings();
   initializeLCD();
 }
 
 void loop()
 {
-  readButton();
+  ReadButtons();
   runAuto();
+  if (refreshScreen == true)
+  {
+    printScreen();
+  }
+
   if (menuFlag == false)
   {
     unsigned long currentMillisRunAuto = millis();
@@ -509,6 +803,7 @@ void loop()
     {
       previousMillisRunAuto = currentMillisRunAuto;
       refreshScreen = true;
+      Serial.println("Refresh");
     }
   }
 }
